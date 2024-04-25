@@ -1,0 +1,16 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: Debug Current File",
+      "type": "python",
+      "request": "launch",
+      "program": "C:\\projects\\ml_tool\\test.py",
+      "stopOnEntry": false,
+      "console": "integratedTerminal",
+      "python": "C:\\projects\\ml_tool\\venv\\Scripts\\python.exe",
+      "env": {},
+      "envFile": "${workspaceFolder}/.env"
+    }
+  ]
+}

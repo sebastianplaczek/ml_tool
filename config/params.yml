@@ -1,0 +1,7 @@
+model_type: XGBClassifier
+model_params: default
+model_scores : ['ACCURACY'] 
+validation_type: cross_validation
+validation_params:
+  n_splits : 5
+charts_localisation : 'charts//'
