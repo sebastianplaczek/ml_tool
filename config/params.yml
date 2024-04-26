@@ -1,7 +1,11 @@
+model_name : spaceship_titanic
 model_type: XGBClassifier
 model_params: default
 model_scores : ['ACCURACY'] 
 validation_type: cross_validation
 validation_params:
   n_splits : 5
-charts_localisation : 'charts//'
+charts_localisation : 'models_output//'
+save_charts:
+  roc
+  confusion_matrix
