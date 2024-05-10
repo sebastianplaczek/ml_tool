@@ -4,6 +4,7 @@ import xgboost as xgb
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import inspect
 from sklearn.metrics import (
     accuracy_score,
     recall_score,
@@ -11,6 +12,8 @@ from sklearn.metrics import (
     roc_curve,
     roc_auc_score,
     confusion_matrix,
+    mean_absolute_error,
+    mean_squared_error,
 )
 
 from datetime import datetime
@@ -42,15 +45,18 @@ class MLWorker:
             print(f"Folder {folder_name} już istnieje.")
 
     def read_config(self):
-        current_path = os.path.dirname(os.path.abspath(__file__))
-        config_path = os.path.join(current_path, "config")
-        file_path = os.path.join(config_path, "params.yml")
-
-        with open(file_path, "r") as file:
+        with open("params.yml", "r") as file:
             self.params = yaml.safe_load(file)
 
+    def gini_normalized(y_test, y_pred):
+        gini = lambda a, p: 2 * roc_auc_score(a, p) - 1
+        return gini(y_test, y_pred) / gini(y_test, y_actual)
+
     def model_selection(self):
-        models = {"XGBClassifier": xgb.XGBClassifier()}
+        models = {
+            "XGBClassifier": xgb.XGBClassifier(),
+            "XGBRegressor": xgb.XGBRegressor(),
+        }
         self.model = models[self.params["model_type"]]
         if self.params["model_params"] != "default":
             model.set_params(self.params["model_params"])
@@ -69,9 +75,15 @@ class MLWorker:
         y = self.y.values
         kf = KFold(n_splits=self.params["validation_params"]["n_splits"])
 
-        accuracy_scores = []
-        recall_scores = []
-        precision_scores = []
+        metrics = {
+            "accuracy": accuracy_score,
+            "recall": recall_score,
+            "precision": precision_score,
+            "gini": gini_normalized,
+            "MSE": mean_squared_error,
+            "MAE": mean_absolute_error,
+        }
+        scores = {score: [] for score in self.params["model_scores"]}
         index = 0
         for train_index, test_index in kf.split(X):
             index += 1
@@ -90,13 +102,13 @@ class MLWorker:
             y_pred = self.model.predict(X_test)
 
             # Ocena modelu na zbiorze testowym
-            accuracy = accuracy_score(y_test, y_pred)
-            recall = recall_score(y_test, y_pred)
-            precision = precision_score(y_test, y_pred)
+            for score_name in self.params["model_scores"]:
+                metrics_function = metrics[score_name]
+                score = round(metrics_function(y_test, y_pred) * 100, 2)
+                scores[score_name].append(score)
+                print(f"{score_name} : {score}")
 
-            accuracy_scores.append(round(accuracy * 100, 2))
-            recall_scores.append(round(recall * 100, 2))
-            precision_scores.append(round(precision * 100, 2))
+            # save chart with params in validation, every split on line
 
             # Rysowanie krzywej ROC
             if "roc" in self.params["save_charts"]:
@@ -104,10 +116,6 @@ class MLWorker:
 
             if "confusion_matrix" in self.params["save_charts"]:
                 self.plot_conf_matrix(y_test, y_pred, index)
-
-            print(f"Accuracy score : {accuracy}")
-            print(f"Recall score {recall}")
-            print(f"Precision score {precision}")
 
     def plot_roc(self, X_test, y_test, iteration):
         y_probs = self.model.predict_proba(X_test)[:, 1]

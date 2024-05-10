@@ -1,11 +1,13 @@
 model_name : spaceship_titanic
-model_type: XGBClassifier
+model_type: XGBRegressor
 model_params: default
-model_scores : ['ACCURACY'] 
+#model_scores : ['accuracy','recall','precision'] 
+model_scores : ['MSE','MAE']
 validation_type: cross_validation
 validation_params:
   n_splits : 5
 charts_localisation : 'models_output//'
 save_charts:
-  roc
-  confusion_matrix
+  brak
+  #roc
+  #confusion_matrix
