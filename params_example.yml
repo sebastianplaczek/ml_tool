@@ -11,3 +11,4 @@ save_charts:
   brak
   #roc
   #confusion_matrix
+mlflow: True

@@ -5,6 +5,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import inspect
+
+import mlflow
+from mlflow.models import infer_signature
+
 from sklearn.metrics import (
     accuracy_score,
     recall_score,
@@ -61,7 +65,7 @@ class MLWorker:
 
         self.model = models_dict[self.params["model_type"]]
         if self.params["model_params"] != "default":
-            model.set_params(self.params["model_params"])
+            self.model.set_params(self.params["model_params"])
 
     def validation(self):
         self.now = str(datetime.now()).replace(" ", "_").replace(":", "")
@@ -97,18 +101,16 @@ class MLWorker:
             X_train, X_test = (
                 X[train_index],
                 X[test_index],
-            )  # Zbiory treningowy i testowy cech
+            )
             y_train, y_test = (
                 y[train_index],
                 y[test_index],
-            )  # Zbiory treningowy i testowy etykiet
+            )
 
-            # Trenowanie modelu na zbiorze treningowym
             self.model.fit(X_train, y_train)
 
             y_pred = self.model.predict(X_test)
 
-            # Ocena modelu na zbiorze testowym
             for score_name in self.params["model_scores"]:
                 metrics_function = metrics[score_name]
                 score = round(metrics_function(y_test, y_pred) * 100, 2)
@@ -117,7 +119,7 @@ class MLWorker:
 
             # save chart with params in validation, every split on line
 
-            # Rysowanie krzywej ROC
+            # plot roc ROC
             if "roc" in self.params["save_charts"]:
                 self.plot_roc(X_test, y_test, index)
 
@@ -125,13 +127,15 @@ class MLWorker:
                 self.plot_conf_matrix(y_test, y_pred, index)
 
             if "feature_importance" in self.params["save_charts"]:
-                self.feature_importance()
+                self.feature_importance(index)
 
         if "metrics" in self.params["save_charts"]:
             self.plot_metrics()
 
         if self.params["save_params"]:
             self.save_params()
+
+        self.create_avg_metrics()
 
     def plot_roc(self, X_test, y_test, iteration):
         y_probs = self.model.predict_proba(X_test)[:, 1]
@@ -161,7 +165,7 @@ class MLWorker:
         plt.title("Confusion Matrix")
         plt.savefig(self.model_output_path + "//" + f"confusion_matrix_{iteration}.png")
 
-    def feature_importance(self, columns, iteration):
+    def feature_importance(self, iteration):
 
         plt.figure(figsize=(10, 6))
         plt.barh(self.columns, self.model.feature_importances_)
@@ -174,14 +178,23 @@ class MLWorker:
             self.model_output_path + "//" + f"feature_importance_{iteration}.png"
         )
 
-    def plot_metrics(self):
+    def create_avg_metrics(self):
+        self.avg_metrics = {}
         for score_name, score_list in self.scores.items():
-            plt.figure(figsize=(10, 6))
-            plt.bar([str(x) for x in range(len(score_list))], score_list)
-            plt.xlabel(f"{score_name}")
-            plt.ylabel("validation set")
-            plt.title(f"{score_name} avg: {round(np.mean(score_list),2)} ")
-            plt.savefig(self.model_output_path + "//" + f"{score_name}.png")
+            self.avg_metrics[score_name] = np.mean(score_list)
+
+    def plot_metrics(self):
+        plt.figure(figsize=(10, 6))
+        for score_name, score_list in self.scores.items():
+            avg = np.mean(score_list)
+            splits = [str(x) for x in range(len(score_list))]
+            plt.scatter(splits, score_list, label=f"{score_name}")
+            plt.plot(splits, [avg for x in splits], label=f"{score_name}_avg")
+        plt.xlabel("score")
+        plt.ylabel("validation split number")
+        plt.title(f"Validation metrics")
+        plt.legend(loc="upper left", bbox_to_anchor=(1, 1))
+        plt.savefig(self.model_output_path + "//" + "metrics.png")
 
     def save_params(self):
         self.params["features"] = self.columns
@@ -202,15 +215,18 @@ class MLWorker:
 
         if os.path.exists(filename):
             df_models = pd.read_excel(filename)
-            df_models = pd.concat([df_models, df], ignore_index=True)
-            df_models.reset_index().to_excel(filename)
+            final = pd.concat([df_models, df], ignore_index=True)
+            final.to_excel(filename)
+            print("Model data saved")
+            models_xlsx = final
 
         else:
             df.to_excel(filename)
+            models_xlsx = df
 
         # resize columns
         with pd.ExcelWriter(filename) as writer:
-            df.to_excel(writer, index=False, sheet_name="Sheet1")
+            models_xlsx.to_excel(writer, index=False, sheet_name="Sheet1")
             sheet = writer.sheets["Sheet1"]
 
             for column_cells in sheet.columns:
@@ -218,11 +234,31 @@ class MLWorker:
                 sheet.column_dimensions[column_cells[0].column_letter].width = (
                     length + 2
                 )
+            print("Moded data reshaped")
+
+    def run_mlflow(self):
+        mlflow.set_tracking_uri(uri="http://127.0.0.1:8080")
+        mlflow.set_experiment(f"{self.params['model_name']}")
+        with mlflow.start_run():
+            if self.params["model_params"] != "default":
+                mlflow.log_params(self.params["model_params"])
+
+            mlflow.log_metrics(self.avg_metrics)
+            signature = infer_signature(self.X, self.model.predict(self.X))
+            model_info = mlflow.sklearn.log_model(
+                sk_model=self.model,
+                artifact_path="model",
+                signature=signature,
+                # input_example=self.X,
+                # registered_model_name="tracking-quickstart",
+            )
 
     def run(self):
 
         self.model_selection()
         self.validation()
+        if self.params["mlflow"]:
+            self.run_mlflow()
         self.save_excel()
 
 
